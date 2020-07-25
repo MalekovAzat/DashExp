@@ -1,52 +1,40 @@
-from threading import Timer as treadingTimer
+import threading
 
-def decoratorFactory():
-    print('я создаю декораторы и буду вызван только 1 раз чтобы создать функцию')
-    def decorator(func):
-        print('я декоратор, и буду вызван единственный раз, когда меня используют перед методом')
-        def wrapper(obj):
-            print('я вызываюсь вместе с твоей функцией', obj)
-            func(obj)
-            obj.repeat()
-        return wrapper
-    return decorator
+# decorator for setThe
+def createIterableFunction():
+    def setInterval(interval):
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                stopped = threading.Event()
+                def loop():
+                    while not stopped.wait(interval):
+                        func(args, kwargs)
+                t = threading.Thread(target=loop)
+                # t.daemon = True
+                t.start()
+                return stopped
+            return wrapper
+        return decorator
+    return setInterval
 
-class repeatingTimer():
-    def __init__(self, interval=0.01, callback=None):
-        self.interval = interval
-        self.callback = callback
-        self.timer = treadingTimer(interval, self.callback_func)
+class iterableTimer():
+    def __init__(self, interval, callback):
+        createDecWithInterval = createIterableFunction()(interval);
+        self.callback = createDecWithInterval(callback)
+
 
     def start(self):
-        self.timer.start()
+        self.controller = self.callback()
 
-    def repeat(self):
-        self.timer = treadingTimer(self.interval, self.callback_func)
-        self.start()
-
-    def cancel(self):
-        self.timer.cancel()
-
-    def setInterval(self, interval):
-        if (interval <= 0.1):
-            return
-        self.interval = interval
-        self.timer = treadingTimer(interval, self.callback)
-
-    def setCallback(self, callback):
-        self.callback = callback
-        self.timer = treadingTimer(self.interval, callback);
-    
-    @decoratorFactory()
-    def callback_func(self):
-        self.callback()
-
+    def stop(self):
+        self.controller.set()
 
 def main():
-    def testCallback():
-        print('test')
+    def myCallback(args, kwargs):
+        print('HELLO')
 
-    myTimer = repeatingTimer(1, testCallback)
+    myTimer = iterableTimer(1, myCallback)
+    
     myTimer.start()
 
 if __name__ == '__main__':
