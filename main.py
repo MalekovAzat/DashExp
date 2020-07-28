@@ -64,33 +64,38 @@ def startCalculate(startButtonClickCount, stopButtonClickCount, frequencyValue):
     Output(component_id="graph", component_property='figure'),
     [
         Input(component_id="interval-component", component_property='n_intervals'),
-        Input(component_id="interval-component", component_property='interval')
+        Input(component_id="interval-component", component_property='interval'),
     ]
 )
-def redrowGraph(n_intervals, frequencyValue):
-    graphData = r.get("chartData")
-    if graphData is None:
-        graphData = {
-        "time":  [0,],
-        "cpuUsage": [psutil.cpu_percent(),],
-        }
-        r.set('chartData', json.dumps(graphData))
-        fig = px.line(graphData, x="time", y="cpuUsage")
-        return fig
+def updateGraph(n_intervals, frequencyValue):
+    print(dash.callback_context.triggered[0]['prop_id'].split('.'))
     
-    graphData = json.loads(graphData)
-    frequencyValue = frequencyValue / 1000;
-    graphData['time'].append(graphData['time'][-1] + frequencyValue)
-    graphData['cpuUsage'].append(psutil.cpu_percent())
-    r.set('chartData', json.dumps(graphData))
-    fig = px.line(graphData, x="time", y="cpuUsage")
-    return fig
+    # TODO: добавить проверку вызываемого значения
+
+    frequencyValue = frequencyValue / 1000
+    graphData = r.get('graphData')
+    if frequencyValue > 0:
+        if graphData == None:
+            graphData = {'time': [0,], 'cpuUsage': [psutil.cpu_percent(),]}
+            r.set('graphData', json.dumps(graphData))
+            return px.line(graphData, x='time', y='cpuUsage')
+        else:
+            graphData = json.loads(graphData)
+            graphData['time'].append(graphData['time'][-1] + frequencyValue)
+            graphData['cpuUsage'].append(psutil.cpu_percent())
+            r.set('graphData', json.dumps(graphData))
+            return px.line(graphData, x='time', y='cpuUsage')
+    if graphData == None:
+        return px.line({'time':[], 'cpuUsage':[]}, x='time', y='cpuUsage')
+    else:
+        graphData = json.loads(graphData)
+        return px.line(graphData, x='time', y='cpuUsage')
 
 @app.callback(
     [Output(component_id="interval-component" ,component_property="interval"),
     Output(component_id="interval-component" ,component_property="disabled")],
     [Input(component_id='is-calculating', component_property="children"),
-    Input(component_id='frequency-value', component_property="value")]
+    Input(component_id='frequency-value', component_property="value")]  
 )
 def checkIsCalculating(isCalculating, frequencyValue):
     if not isinstance(frequencyValue, (int, float, str)):
