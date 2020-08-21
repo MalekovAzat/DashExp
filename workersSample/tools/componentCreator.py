@@ -9,12 +9,6 @@ import dash
 import json
 import datetime
 
-class СomponentCreator(object):
-    def __new__(cls):
-        if not hasattr(cls, 'instance'):
-            cls.instance = super(СomponentCreator, cls).__new__(cls)
-        return cls.instance
-
 # The function create an accordion item, with additional options
 def createAccordionItem(appObj, index, /, header='Template header', description='Template description', upload_component=False, counter_component=False):
     collapseChildren=[
@@ -145,7 +139,6 @@ def createAccordionItem(appObj, index, /, header='Template header', description=
 def subscribeTaskHandler(app_obj, ids_prefixes, task_count, /, handler_id='server-information', task_callback=None):
     if not task_callback:
         def task_callback(*args):
-            print('!@#', dash.callback_context.triggered)
             return dash.callback_context.triggered[0]['prop_id'].split('.')[0]
 
     app_obj.callback(
@@ -192,18 +185,8 @@ def createContainerForTasks(app_obj,/, containter_id="", header="default header"
         }
     )
 
+# change to just div
 def createTaskReport(app_obj, /, buinding_id='',header='template header', update_interval=1000):
-    # def toggle_callback(n_click, is_open):
-    #     print('HELLLLOOO')
-    #     if n_click:
-    #         return not is_open
-    #     return is_open
-    # app_obj.callback(
-    #     Output(f'collapse-{buinding_id}', 'is_open'),
-    #     [Input(f'toggle-{buinding_id}','n_clicks')],
-    #     [State(f'collapse-{buinding_id}', 'is_open')]
-    # )(toggle_callback)
-
     collapseChildren = [
         dcc.Interval(id=f'progress-interval-{buinding_id}', n_intervals=0, interval=update_interval),
         dbc.Progress(id=f'progress-bar-{buinding_id}'),
@@ -217,19 +200,6 @@ def createTaskReport(app_obj, /, buinding_id='',header='template header', update
             }
         )
     ]
-
-    # def update_progress_bar(n):
-    #     progress = 47;
-    #     print('HELL')
-    #     # нужно понять как отобразить процесс, возможно использовать для этого 
-    #     return [progress, f'{progress}' if progress >= 5 else ""]
-    # app_obj.callback(
-    #     [
-    #         Output(f'progress-bar-{buinding_id}', 'value'),
-    #         Output(f'progress-bar-{buinding_id}', 'children')
-    #     ],
-    #     [Input(f'progress-interval-{buinding_id}', 'n_intervals')]
-    # )(update_progress_bar)
 
     return dbc.Card(
         children=[
@@ -267,9 +237,13 @@ def generateCallbacksForTaskReports(app_obj, /, max_task_report=100):
         if n_click:
             return not is_open
         return is_open
-
+    
+    # Set callback from different place and add real process change
     def updateProgressBarCallback(n):
+        callbackContext = dash.callback_context
         progress = 47
+        triggeredItem = callbackContext.triggered[0]
+        
         return [progress, f'{progress}' if progress >= 5 else ""]
 
     for buinding_id in range(1, max_task_report+1):
@@ -286,9 +260,6 @@ def generateCallbacksForTaskReports(app_obj, /, max_task_report=100):
             ],
             [Input(f'progress-interval-{buinding_id}', 'n_intervals')]
         )(updateProgressBarCallback)
-    # 
-
-
 
 def main():
     s = СomponentCreator()
