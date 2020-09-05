@@ -41,7 +41,7 @@ def createLayout(application):
         html.Div(id='calculated-data', style={'display': 'none'}),
         dcc.Interval(id='interval-component', interval=1000, n_intervals=0, disabled=True)
     ])
-        
+
 @app.callback(
     Output(component_id='is-calculating', component_property='children'),
     [Input(component_id='start-button', component_property="n_clicks"),
@@ -49,6 +49,8 @@ def createLayout(application):
      Input(component_id='frequency-value', component_property="value")]
 )
 def startCalculate(startButtonClickCount, stopButtonClickCount, frequencyValue):
+    print('startCalculate')
+    print(dash.callback_context.triggered)
     callbackContext = dash.callback_context
     if not callbackContext.triggered:
         button_id = 'No clicks yet'
@@ -68,12 +70,21 @@ def startCalculate(startButtonClickCount, stopButtonClickCount, frequencyValue):
     ]
 )
 def updateGraph(n_intervals, frequencyValue):
-    print(dash.callback_context.triggered[0]['prop_id'].split('.'))
-    
-    # TODO: добавить проверку вызываемого значения
+    print('updateGraph')
+    graphData = r.get('graphData')
+
+    callbackContext = dash.callback_context
+    reason = callbackContext.triggered[0]['prop_id'].split('.')[1]
+
+    if reason == 'interval':
+        if graphData == None:
+            return px.line({'time':[], 'cpuUsage':[]}, x='time', y='cpuUsage')
+        else:
+            graphData = json.loads(graphData)
+            return px.line(graphData, x='time', y='cpuUsage')
 
     frequencyValue = frequencyValue / 1000
-    graphData = r.get('graphData')
+    
     if frequencyValue > 0:
         if graphData == None:
             graphData = {'time': [0,], 'cpuUsage': [psutil.cpu_percent(),]}
@@ -98,6 +109,7 @@ def updateGraph(n_intervals, frequencyValue):
     Input(component_id='frequency-value', component_property="value")]  
 )
 def checkIsCalculating(isCalculating, frequencyValue):
+    print('checkIsCalculating')
     if not isinstance(frequencyValue, (int, float, str)):
         return [0,True];
     frequencyValue = float(frequencyValue);

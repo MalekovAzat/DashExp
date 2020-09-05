@@ -2,112 +2,182 @@ import dash
 import dash_html_components as html
 import dash_bootstrap_components as dbc
 import json
-from dash.dependencies import Input, Output, State
+from dash_devices.dependencies import Input, Output, State
 
-from tools import componentCreator, WorkersManager
-from taskSamples import taskManager
+from tools import componentCreator as cc, WorkersManager as wm
+from taskSamples import taskManager as tm
+from tools.storageProvider import storageProvider as sp
 
-class dashApp(dash.Dash):
-    def __init__(self, name):
-        dash.Dash.__init__(self, name, external_stylesheets=[dbc.themes.BOOTSTRAP])
-        self.m_taskCount = 4
-        self._createLayout()
-        # важная строчка, отключает все предупреждениях о коллбеках для несуществующих элементов
-        self.config.suppress_callback_exceptions = True
-        self.m_workerManager = WorkersManager.WorkersManager()
+def redisCallback(message):
+    print(message)
 
-    def run_server(self, debug):
-        dash.Dash.run_server(self,debug=debug);
+def getTaskId(message):
+    return message['channel'].decode('utf-8').split(':')[1].split('-')[1]
 
-    def _createLayout(self):
-        # left part
-        accordionItems = [
-            componentCreator.createAccordionItem(self, i, upload_component = True, counter_component = True) for i in range (1, self.m_taskCount+1)
-        ]
-        componentCreator.subscribeTaskHandler(self, 'task-info', self.m_taskCount, task_callback=self._handleStartWorkRequest, handler_id='in-progress-task-container')
-        componentCreator.generateCallbacksForTaskReports(self, max_task_report = 30)
+class dashApp():
+    def __init__(self, app):
+        
+        self.app = app
 
-        self.layout = html.Div(id='app-layout',children = [
-            html.Div(
-                id="task-creator",
-                children=[
-                    html.Label(children=[
-                        'Task Creator'
-                        ],
-                        style={
-                            'display': 'block',
-                            'padding': '20px',
-                            'font-weight': 'bolder',
-                            'text-align':'center',
-                        }
-                    ),
-                    *accordionItems,
-                ],
-                style={
-                    'min-width':'450px',
-                    'max-width': '500px',
-                }
-            ),
-            html.Div(
-                id="task-executor",
-                children=[
-                    html.Label(children=[
-                        'Task Queue'
-                        ],
-                        style={
-                            'display': 'block',
-                            'padding': '20px',
-                            'font-weight': 'bolder',
-                            'text-align':'center',
-                        }
-                    ),
-                    html.Div(
-                        id="server-information",
-                        style={
-                            'padding': '5px',
-                        }
-                    ),
-                    componentCreator.createContainerForTasks(self, containter_id='in-progress-task', header='In progress'),
-                    componentCreator.createContainerForTasks(self, containter_id='done-task', header='Done'),
-                    componentCreator.createContainerForTasks(self, containter_id='aborted-task', header='Aborted'),
-                ],
-                style={
-                    'min-width':'450px',
-                    'max-width': '500px',
-                }
-            ),
+        # TODO: на этом моменте должны запуститься 4 потока
+        self.wm = wm.WorkersManager()
+
+        self.app.layout = html.Div([
+            cc.createTaskListTemplate(self.app, tm.taskInfoList, self.taskButtonClickedCallback),
+            cc.createReportListTemplate(self.app),
+            cc.createBindingComponent(self.app, 'internal', self.updateReportListCallback),
+            cc.createBindingProgressComponent(self.app, 'internal-progress', self.updateTaskProgressCallback)
         ],
         style={
             'display':'flex',
             'flex-wrap': 'wrap',
             'justify-content': 'space-around',
             'overflow':  'hidden',
-        }
-        )
+        })  
 
-    def _handleStartWorkRequest(self, *args):
-        callbackContext = dash.callback_context
-        if not callbackContext.triggered:
-            return ''
-        
-        triggeredItem =  callbackContext.triggered[0]
-        taskInfo = triggeredItem['value']
+        # важная строчка, отключает все предупреждениях о коллбеках для несуществующих элементов
+        self.app.config.suppress_callback_exceptions = True
+        sp().setCallbackForKeyChange(self.rediskeyChangeCallback, 'task-*')
+        sp().setCallbackForKeyChange(self.taskProgressChangeCallback, 'progress-*')
 
-        currentChildrens = args[-1]
-        if (taskInfo != ''):
-            print('!@#', taskInfo)
-            taskInfo = json.loads(taskInfo)
-            # need to start task and create an UI element
-            taskId = self._startTask(taskInfo)
-            currentChildrens.insert(int(0), componentCreator.createTaskReport(self, buinding_id=taskId, header=taskInfo['taskName']))
-        return currentChildrens
+    def taskButtonClickedCallback(self, n_clicks, repValue, imageData, taskName):
+        if repValue and imageData:
+            task = {
+                'repValue': repValue,
+                'imageData': imageData,
+                'taskName': taskName
+            }
+            self.wm.push(task)
+
+    def rediskeyChangeCallback(self, message):
+        taskId = getTaskId(message)
+        self.app.push_mods({
+            'internal': {
+                'children': f'task-{taskId}:{sp().taskStatus(taskId)}'
+            }
+        })
+
+    def taskProgressChangeCallback(self, message):
+        taskId = getTaskId(message)
+        self.app.push_mods({
+            'internal-progress': {
+                'children': f'progress-{taskId}:{sp().taskProgress(taskId)}'
+            }
+        })
         
-        
-    def _startTask(self, taskInfo):
-        task = taskManager.provideTask(taskInfo['taskName'])
-        # componentCreator.
-        return self.m_workerManager.startTask(taskInfo, task)
+    def updateTaskProgressCallback(self, taskInfo, inProgressList):
+        taskId = taskInfo.split(':')[0].split('-')[1]
+        taskProgress = float(taskInfo.split(':')[1])
+        return [
+            Output(f'progress-{taskId}', 'value', taskProgress),
+            Output(f'progress-{taskId}', 'children', f'{taskProgress}%' if taskProgress >= 5 else '')
+        ]
+
+    # построение UI элемента
+    def updateReportListCallback(self, taskInfo, inQueueList, inProgressList, inCompletedList, inAbortedList):
+        taskId = taskInfo.split(':')[0].split('-')[1]
+        taskStatus = taskInfo.split(':')[1]
+
+        if taskStatus == None:
+            print('Bad task Id', taskId)
+            return
+        if taskStatus == 'in-queue':
+            return Output('in-queue-list', 'children', self.addInQueueList(taskId, inQueueList))
+
+        elif taskStatus == 'in-progress':
+            return [
+                Output('in-queue-list', 'children', self.removeFromList(taskId, inQueueList)),
+                Output('in-progress-list', 'children', self.addInProgressList(taskId, inProgressList))
+            ]
+        elif taskStatus == 'in-completed':
+            return [
+                Output('in-progress-list', 'children', self.removeFromList(taskId, inProgressList)),
+                Output('in-completed-list', 'children', self.addInCompletedList(taskId, inCompletedList))
+            ]
+        elif taskStatus == 'in-aborted':
+            return [
+                Output('in-queue-list', 'children', self.removeFromList(taskId, inQueueList)),
+                Output('in-progress-list', 'children', self.removeFromList(taskId, inProgressList)),
+                Output('in-aborted-list', 'children', self.addInAbortedList(taskId, inAbortedList))
+            ]
+        else:
+            print(f'Bad task status {taskStatus} for task {taskId}')
+    
+    def addInQueueList(self, taskId, childList):
+        childList.insert(0, cc.createTaskInQueueReport(taskId))
+        return childList
+    
+    def addInProgressList(self, taskId, childList):
+        childList.insert(0, cc.createTaskInProgressReport(taskId))
+        return childList
+
+    def addInCompletedList(self, taskId, childList):
+        childList.insert(0, cc.createTaskInCompletedReport(taskId))
+        return childList
+
+    def addInAbortedList(self, taskId, childList):
+        childList.insert(0, cc.createTaskInAbortedReport(taskId))
+        return childList
+    
+    # TODO: распарсить элемент правильно чтобы там можно было получить объект
+    #  common method
+    def removeFromList(self, taskId, childList):
+        taskName = f'task-{taskId}'
+        removedCard = None
+        """ Template of list
+        [
+           {
+              "props": {
+                 "children": [
+                    {
+                       "props": {
+                          "children": "Task 3",
+                          "style": {
+                             "padding": "10px"
+                          }
+                       },
+                       "type": "P",
+                       "namespace": "dash_html_components"
+                    },
+                    {
+                       "props": {
+                          "children": "added: 02/09/2020 23:50:37",
+                          "className": "text-secondary",
+                          "style": {
+                             "margin-left": "10px",
+                             "font-size": "0.8em"
+                          }
+                       },
+                       "type": "P",
+                       "namespace": "dash_html_components"
+                    }
+                 ],
+                 "id": "task-3",
+                 "className": "shadow bg-light",
+                 "style": {
+                    "padding": "5px",
+                    "margin": "10px 0",
+                    "border-radius": "5px"
+                 }
+              },
+              "type": "Div",
+              "namespace": "dash_html_components"
+           },
+           {
+              "props": {},
+              "type": "Div",
+              "namespace": "dash_html_components"
+           }
+        ]
+        """
+        for cardIndex in range(0, len(childList)):
+            if childList[cardIndex]['props']['id'] == taskName:
+                removedCard = childList[cardIndex]
+            
+        if removedCard != None:
+            childList.remove(removedCard)
+        return childList
 
 if __name__=='__main__':
     app = dashApp(__name__)
-    app.run_server(debug=True)
+    app.run_server(debug=True, host='0.0.0.0', port=5000)

@@ -1,62 +1,74 @@
 from taskSamples import taskManager
 
 import multiprocessing as mp
-
+from tools.storageProvider import storageProvider as sp
 import time
+import uuid 
 
-def template_target(q):
-    print('start Process')
-    item = q.get()
+# for internal usage
+def pusherFunc(internalQ, taskQ):
+    print('hello by internal')
     while True:
-        item = q.get()
-        print('Get an item', item**512**10)
-        print('end Task')
+        newTask = internalQ.get()
+        print('newTask', newTask)
+        sp().updateTaskStatus(newTask['taskId'], 'in-queue')
+        taskQ.put(newTask)
+
+def workerFunc(taskQ):
+    print('--worker started--')
+    while True:
+        newTask = taskQ.get()
+        sp().updateTaskStatus(newTask['taskId'], 'in-progress')
+        
+        taskManager.executeTask(newTask)
+
+        sp().updateTaskStatus(newTask['taskId'], 'in-completed')
 
 class WorkersManager():
-    def __init__(self, /, target=None, workersCount = 4, max_task_count = 30, daemon=False):
-        if target==None:
-            target = template_target
-        self.m_workersCount = workersCount
-        self.m_isDaemon = daemon
+    def __init__(self, /, workersCount = 4, maxActiveTaskCount = 100):
+        self.workersCount = workersCount
         
-        # may be need 
-        # self.m_queue = mp.Queue(max_task_count)
-        self.m_taskQueue = []
-        self.m_workers = []
-        self.m_lastTaskNumber = 1
-        # self.m_emptyId = [i for i in range(1, workersCount + 1)]
-        self.m_busyWorkers = 0
+        self.taskQueue = mp.Queue(maxActiveTaskCount)
+        self.internalQueue = mp.Queue(maxActiveTaskCount)
+        self.activeWorkersCount = 0
+        self.usedIds = []
+        self.freeIds = [i for i in range(1, maxActiveTaskCount + 1)]
+        
+        self.queuePusher = mp.Process(target=pusherFunc, args=(self.internalQueue, self.taskQueue))
+        self.queuePusher.start()
 
-        # lizy initialization
-        # self.m_workers = [mp.Process(target=target, args=(self.m_queue,), daemon=daemon) for index in range(1, workersCount + 1)]
-
-    def _hasFreeWorker(self):
-        return self.m_busyWorkers < self.m_workersCount
-
-    def startTask(self, task, *args):
-        if self._hasFreeWorker():
-            worker = mp.Process(target=task, args=args)
+        self.workers = [mp.Process(target=workerFunc, args=(self.taskQueue,))  for i in range(0, workersCount)]
+        for worker in self.workers:
             worker.start()
-            self.m_busyWorkers += 1
-            self.m_workers.append(worker)
-            self._createStorageForTask()
-            self.m_lastTaskNumber+=1
-            return self.m_lastTaskNumber - 1
-        return -1
 
-    def _createStorageForTask(self):
-        self.m_storage[f'task-{self.m_lastTaskNumber}-iterationCount'] = 0
-        self.m_storage[f'task-{self.m_lastTaskNumber}-currentIteration'] = 0
-        self.m_storage[f'task-{self.m_lastTaskNumber}-output'] = 0
+    def hasFreeWorker(self):
+        return self.activeWorkersCount < self.workersCount
 
-    def join(self):
-        if self.m_isDaemon:
-            return
-        for worker in self.m_workers:
-            worker.join()
+    def getUnicId(self):   
+        return str(uuid.uuid1()).replace("-", "")
+
+    def push(self, taskInfo):
+        taskId = self.getUnicId()
+        if taskId:
+            taskInfo['taskId'] = taskId
+            self.internalQueue.put(taskInfo)
+            
+    def startTask(self, task, *args):
+        pass
+        # if self._hasFreeWorker():
+        #     unicId = self._getUnicId()
+        #     worker = mp.Process(target=task, args=(*args, unicId))
+        #     sp().createData(unicId)
+
+        #     worker.start()
+
+        #     self.m_workers.append(worker)
+
+        #     return unicId
+        # return None
         
 def main():
-    workersManager = WorkersManager(target=template_target, daemon=False)
+    workersManager = WorkersManager(workersCount=4)
 
 if __name__ == "__main__":
     main()
