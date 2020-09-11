@@ -7,44 +7,41 @@ import uuid
 
 # for internal usage
 def pusherFunc(internalQ, taskQ):
-    print('hello by internal')
     while True:
         newTask = internalQ.get()
-        print('newTask', newTask)
+        # print('newTask', newTask)
         sp().updateTaskStatus(newTask['taskId'], 'in-queue')
         taskQ.put(newTask)
 
-def workerFunc(taskQ):
-    print('--worker started--')
+def workerFunc(workerNumber, taskQ):
+    print(f'--Worker-{workerNumber} started--')
+
     while True:
         newTask = taskQ.get()
+        if sp().taskStatus(newTask['taskId']) == 'in-aborted':
+            continue
+
+        sp().updateExecutedTask(workerNumber, newTask['taskId'])
         sp().updateTaskStatus(newTask['taskId'], 'in-progress')
         
         taskManager.executeTask(newTask)
 
+        sp().updateExecutedTask(workerNumber, '')
         sp().updateTaskStatus(newTask['taskId'], 'in-completed')
 
 class WorkersManager():
     def __init__(self, /, workersCount = 4, maxActiveTaskCount = 100):
-        self.workersCount = workersCount
-        
         self.taskQueue = mp.Queue(maxActiveTaskCount)
         self.internalQueue = mp.Queue(maxActiveTaskCount)
-        self.activeWorkersCount = 0
-        self.usedIds = []
-        self.freeIds = [i for i in range(1, maxActiveTaskCount + 1)]
-        
+
         self.queuePusher = mp.Process(target=pusherFunc, args=(self.internalQueue, self.taskQueue))
         self.queuePusher.start()
 
-        self.workers = [mp.Process(target=workerFunc, args=(self.taskQueue,))  for i in range(0, workersCount)]
+        self.workers = [mp.Process(target=workerFunc, args=(i, self.taskQueue,))  for i in range(0, workersCount)]
         for worker in self.workers:
             worker.start()
 
-    def hasFreeWorker(self):
-        return self.activeWorkersCount < self.workersCount
-
-    def getUnicId(self):   
+    def getUnicId(self):
         return str(uuid.uuid1()).replace("-", "")
 
     def push(self, taskInfo):
@@ -52,20 +49,16 @@ class WorkersManager():
         if taskId:
             taskInfo['taskId'] = taskId
             self.internalQueue.put(taskInfo)
-            
-    def startTask(self, task, *args):
-        pass
-        # if self._hasFreeWorker():
-        #     unicId = self._getUnicId()
-        #     worker = mp.Process(target=task, args=(*args, unicId))
-        #     sp().createData(unicId)
 
-        #     worker.start()
+    def restartWorkerByTask(self, taskId):
+        workerNumber = sp().getWorkerNumberByTask(taskId)
+        if workerNumber == None:
+            return
+        
+        self.workers[workerNumber].kill()
+        self.workers[workerNumber] = mp.Process(target=workerFunc, args=(workerNumber, self.taskQueue))
+        self.workers[workerNumber].start()
 
-        #     self.m_workers.append(worker)
-
-        #     return unicId
-        # return None
         
 def main():
     workersManager = WorkersManager(workersCount=4)

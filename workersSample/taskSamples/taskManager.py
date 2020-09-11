@@ -33,8 +33,6 @@ taskInfoList = [
 ]
 
 def executeTask(taskData, savePath = 'download/'):
-
-    print('!@#' ,taskData['taskName'])
     repeatCount = taskData['repValue']
     taskId = taskData['taskId']
     data = taskData['imageData'][0].encode("utf8").split(b";base64,")[1]
