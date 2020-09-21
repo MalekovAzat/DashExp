@@ -13,17 +13,16 @@ import datetime
 def redisCallback(message):
     print(message)
 
-
 def getTaskId(message):
     return message['channel'].decode('utf-8').split(':')[1].split('-')[1]
-
 
 class dashApp():
     def __init__(self, app):
         self.app = app
         self.app.config.suppress_callback_exceptions = True
-        self.wm = wm.WorkersManager()
-        sp().createEmptyList('workersInfo', 4)
+        workersCount = 4
+        self.wm = wm.WorkersManager(workersCount=workersCount)
+        sp().createEmptyList('workersInfo', workersCount)
 
         self.app.layout = html.Div([
             cc.createTaskListTemplate(self.app, tm.taskInfoList, self.taskButtonClickedCallback),
@@ -60,14 +59,8 @@ class dashApp():
                 sp().updateTaskStatus(taskId, 'in-aborted')
             return buttonId
 
-    def taskButtonClickedCallback(self, n_clicks, repValue, imageData, taskName):
-        if repValue and imageData:
-            task = {
-                'repValue': repValue,
-                'imageData': imageData,
-                'taskName': taskName
-            }
-            self.wm.push(task)
+    def taskButtonClickedCallback(self, *args):
+        self.wm.createNewTask(*args[1:])
 
     def rediskeyChangeCallback(self, message):
         taskId = getTaskId(message)

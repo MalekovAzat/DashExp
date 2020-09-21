@@ -7,9 +7,10 @@ import uuid
 
 # for internal usage
 def pusherFunc(internalQ, taskQ):
+    print(f'--Pusher   started--')
+
     while True:
         newTask = internalQ.get()
-        # print('newTask', newTask)
         sp().updateTaskStatus(newTask['taskId'], 'in-queue')
         taskQ.put(newTask)
 
@@ -37,7 +38,7 @@ class WorkersManager():
         self.queuePusher = mp.Process(target=pusherFunc, args=(self.internalQueue, self.taskQueue))
         self.queuePusher.start()
 
-        self.workers = [mp.Process(target=workerFunc, args=(i, self.taskQueue,))  for i in range(0, workersCount)]
+        self.workers = [mp.Process(target=workerFunc, args=(i, self.taskQueue))  for i in range(0, workersCount)]
         for worker in self.workers:
             worker.start()
 
@@ -59,6 +60,16 @@ class WorkersManager():
         self.workers[workerNumber] = mp.Process(target=workerFunc, args=(workerNumber, self.taskQueue))
         self.workers[workerNumber].start()
 
+    def createNewTask(self, *args):
+        taskName = args[-1]
+        if None in args[:-1]:
+            return
+            
+        task = {
+            'taskName': taskName,
+            'args': args[:-1]
+        }
+        self.push(task)
         
 def main():
     workersManager = WorkersManager(workersCount=4)

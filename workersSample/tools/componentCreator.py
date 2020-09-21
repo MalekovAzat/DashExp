@@ -2,6 +2,8 @@
 # The class is a singletone
 from dash_devices.dependencies import Input, Output, State, MATCH, ALL
 from tools.storageProvider import storageProvider as sp
+import tools.internalComponentCreator as Icc
+
 import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 import dash_html_components as html
@@ -9,7 +11,6 @@ import base64
 import dash
 import json
 import datetime
-
 
 def createTaskListTemplate(app, taskList=[], submitButtonCallback=None):
     return html.Div(
@@ -36,6 +37,81 @@ def createTaskListTemplate(app, taskList=[], submitButtonCallback=None):
         ]
     )
 
+def createTasksCards(app:object, tasks:list, submitButtonCallback:object) -> list:
+    elements = []
+
+    # TODO: добавить сюда вызов метода
+    for task in tasks:
+        internalElements = createInternalElements(app, task['interface'], submitButtonCallback, task['id'])
+        elements.append(
+            Icc.card(task['id'], header=task['header'], childs=internalElements, app=app)
+        )
+    return elements
+
+def createInternalElements(app:object, internalItemList:list, submitButtonCallback:object, wrapperId) -> list:
+    elements = []
+    statesList = []
+    inputList = []
+
+    for item in enumerate(internalItemList):
+        name = item[1]['name']
+        if name == 'upload':
+            statesList.append({
+                'id': item[1]['id'],
+                'prop': item[1]['prop']
+            })
+            elements.append(Icc.upload(item[1]['id'], **item[1]['kargs']))
+        elif name == 'labelWithInput':
+            statesList.append({
+                'id': item[1]['id'],
+                'prop': item[1]['prop'],
+            })
+            elements.append(Icc.labelWithInput(item[1]['id'], **item[1]['kargs']))
+        elif name == 'button':
+            inputList.append({
+                'id': item[1]['id'],
+                'prop': item[1]['prop'] 
+            })
+            elements.append(Icc.button(item[1]['id'], **item[1]['kargs']))
+    
+    statesList.append({'id': wrapperId, 'prop':'id'})
+    
+    createCallbackForClick(app, inputList, [], statesList, submitButtonCallback)
+
+    return elements
+
+# возможно не нужна или не пригодится
+def createCallbackForClick(app, inputsList, outputsList, statesList, func):
+    outputsList = [Output(item['id'], item['prop']) for item in outputsList] if len(outputsList) else None
+    inputsList = [Input(item['id'], item['prop']) for item in inputsList] if len(inputsList) else [None]
+    statesList = [State(item['id'], item['prop']) for item in statesList] if len(statesList) else [None]
+
+    app.callback(
+        outputsList,
+        inputsList,
+        statesList
+    )(func)
+
+def taskCard(app, info, submitButtonCallback):
+    app.callback(
+        None,
+        [
+            Input(f'start-button-{info["name"]}', 'n_clicks'),
+        ],
+        [
+            State(f'input-rep-{info["name"]}', 'value'),
+            State(f'file-uploader-{info["name"]}', 'contents'),
+            State(f'{info["name"]}', 'id')
+        ]
+    )(submitButtonCallback)
+
+    collapseChildrenList = [
+        Icc.upload(f'file-uploader-{info["name"]}', True),
+        Icc.labelWithInput(f'input-rep-{info["name"]}', 'Number of repetitions:'),
+        Icc.button(f'start-button-{info["name"]}', 'Start task')
+    ]
+
+    return Icc.card(info['name'], info['header'], collapseChildrenList, app=app)
 
 def createReportListTemplate(app):
     return html.Div(
@@ -65,113 +141,6 @@ def createReportListTemplate(app):
                 }
             )
         ]
-    )
-
-
-def createTasksCards(app, taskList, submitButtonCallback):
-    return [taskCard(app, info, submitButtonCallback) for info in taskList]
-
-
-def taskCard(app, info, submitButtonCallback):
-    @app.callback(
-        Output(f'collapse-{info["name"]}', 'is_open'),
-        [Input(f'toggle-{info["name"]}', 'n_clicks')],
-        [State(f'collapse-{info["name"]}', 'is_open')]
-    )
-    def toggleButtonCallback(n_click, is_open):
-        return not is_open if n_click else is_open
-
-    app.callback(
-        None,
-        [
-            Input(f'start-button-{info["name"]}', 'n_clicks'),
-        ],
-        [
-            State(f'input-rep-{info["name"]}', 'value'),
-            State(f'file-uploader-{info["name"]}', 'contents'),
-            State(f'{info["name"]}', 'id')
-        ]
-    )(submitButtonCallback)
-    # def func(n_clicks, reprValue, contents):
-    #     print('!@#, Hello', n_clicks, reprValue, contents)
-
-    collapseChildrenList = [
-        dcc.Upload(
-            id=f'file-uploader-{info["name"]}',
-            children=html.Div([
-                'Drag and Drop or ',
-                html.A('Select Files',
-                       className='text-primary')
-            ]),
-            style={
-                'height': '60px',
-                'lineHeight': '60px',
-                'borderWidth': '1px',
-                'borderStyle': 'dashed',
-                'borderRadius': '5px',
-                'textAlign': 'center',
-                'margin': '10px'
-            },
-            multiple=True
-        ),
-
-        html.Label(
-            children=[
-                "Number of repetitions:",
-                dcc.Input(
-                    id=f'input-rep-{info["name"]}',
-                    type='number',
-                    placeholder='>=1',
-                    min=1,
-                    style={
-                        'margin-left': '20px',
-                        'width': '60px',
-                    }
-                ),
-            ],
-            style={
-                'margin-left': '10px'
-            }
-        ),
-
-        dbc.Button(
-            'Start task',
-            color='link',
-            id=f'start-button-{info["name"]}',
-            className='text-body bg-success',
-            style={
-                'display': 'block',
-                'margin': '10px auto',
-                'font-size': '1.2em'
-            }
-        ),
-    ]
-
-    return dbc.Card(
-        id=info['name'],
-        children=[
-            dbc.CardHeader(
-                html.H6(
-                    dbc.Button(
-                        info['header'],
-                        color="link",
-                        id=f'toggle-{info["name"]}',
-                        className='text-body'
-                    )
-                )
-            ),
-            dbc.Collapse(
-                id=f'collapse-{info["name"]}',
-                children=collapseChildrenList,
-                style={
-                    'padding': '15px',
-                }
-            ),
-        ],
-        className='shadow',
-        style={
-            'margin': '10px 0',
-        }
     )
 
 def createReportList(app, /, listId='empty-id', listName='empty name'):
@@ -210,9 +179,6 @@ def createReportList(app, /, listId='empty-id', listName='empty name'):
             'display': 'none'
         }
     )
-
-    # TODO: через этот компонент будет вызываться главный callback который рисует UI!
-
 
 def createBindingComponent(app, componentId, callback):
     app.callback(
@@ -290,6 +256,7 @@ def createInProgressList():
 
 
 def createInCompletedList():
+    taskList = sp().valuesFromList('in-completed')
     return [createTaskInCompletedReport(i) for i in sp().valuesFromList('in-completed')]
 
 
@@ -364,38 +331,38 @@ def createTaskInProgressReport(taskId):
 
 
 def createTaskInCompletedReport(taskId):
-    location = f'download/result-{taskId}.jpg'
+    infoList = sp().infoByTask(taskId)
+    taskName = infoList[0]
+    childList = []
+    if taskName == 'gray-shades':
+        location = infoList[1]
+        childList.append(
+            Icc.form(location, location)
+        )
+    elif taskName == 'calc-sin':
+        points = json.loads(infoList[1])
+        childList.append(
+            Icc.graph(points)
+        )
+    elif taskName == 'read-table':
+        tableData = infoList[1]
+        childList.append(
+            Icc.table(tableData)
+        )
+    elif taskName == 'video-by-image':
+        pathToVideo = infoList[1]
+        childList.append(
+            Icc.video(pathToVideo)
+        )
+    else:
+        print('Invalid task name', taskName)
+        return
 
     return html.Div(
         id=f"task-{taskId}",
         children=[
             html.P(f'Task {taskId}', style={'padding': '10px'}),
-            # html.A('Link to donload', className='stretched-link',href=location, style={'margin': '5px 20px'}),
-            html.Form(
-                action=location,
-                method="get",
-                target='_blank',
-                children=[
-                    html.Img(
-                        src=location,
-                        className='img-thumbnail',
-                        style={
-                            'box-sizing': 'border-box',
-                        }
-                    ),
-                    html.Button(
-                        className="btn btn-success",
-                        type="submit",
-                        children=[
-                            "Download"
-                        ],
-                        style={
-                            'margin': '10px auto',
-                            'display': 'block'
-                        }
-                    )
-                ]
-            )
+            *childList
         ],
         className='shadow bg-light',
         style={

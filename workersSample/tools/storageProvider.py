@@ -47,8 +47,6 @@ class storageProvider(object):
         pubsub.psubscribe(**{f'__keyspace@0__:{pattern}': callback})
         pubsub.run_in_thread(sleep_time=.01)
     
-    # setters and getters for lists
-
     def createEmptyList(self, listName, size):
         self.storage.lpush(listName, *['' for i in range(0, size)])
 
@@ -72,3 +70,9 @@ class storageProvider(object):
         if toList != '':
             self.pushToList(toList, value)
         self.lock.release()
+
+    def setInfo(self, taskId, info):
+        self.storage.lpush(f'info-{taskId}', *info)
+
+    def infoByTask(self, taskId):
+        return [i.decode('utf-8') for i in self.storage.lrange(f'info-{taskId}', 0, -1)]
