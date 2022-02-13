@@ -10,11 +10,14 @@ from tools.storageProvider import storageProvider as sp
 
 import datetime
 
+
 def redisCallback(message):
     print(message)
 
+
 def getTaskId(message):
     return message['channel'].decode('utf-8').split(':')[1].split('-')[1]
+
 
 class dashApp():
     def __init__(self, app):
@@ -25,11 +28,15 @@ class dashApp():
         sp().createEmptyList('workersInfo', workersCount)
 
         self.app.layout = html.Div([
-            cc.createTaskListTemplate(self.app, tm.taskInfoList, self.taskButtonClickedCallback),
+            cc.createTaskListTemplate(
+                self.app, tm.taskInfoList, self.taskButtonClickedCallback),
             cc.createReportListTemplate(self.app),
-            cc.createBindingComponent(self.app, 'internal', self.updateReportListCallback),
-            cc.createBindingProgressComponent(self.app, 'internal-progress', self.updateTaskProgressCallback),
-            cc.createRefreshComponent(self.app, 'refresh-component', self.refreshCallback),
+            cc.createBindingComponent(
+                self.app, 'internal', self.updateReportListCallback),
+            cc.createBindingProgressComponent(
+                self.app, 'internal-progress', self.updateTaskProgressCallback),
+            cc.createRefreshComponent(
+                self.app, 'refresh-component', self.refreshCallback),
         ],
             style={
             'display': 'flex',
@@ -80,7 +87,7 @@ class dashApp():
 
     def refreshCallback(self, val):
         return [
-            cc.createInQueueList(), 
+            cc.createInQueueList(),
             cc.createInProgressList(),
             cc.createInCompletedList(),
             cc.createInAbortedList(),
